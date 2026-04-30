@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const HermesChatRequestSchema = z.object({
+export const UpstreamChatRequestSchema = z.object({
   conversationId: z.string().min(1),
   message: z.string().min(1),
   source: z.literal("google-chat"),
@@ -18,15 +18,15 @@ export const HermesChatRequestSchema = z.object({
   rawEvent: z.unknown(),
 });
 
-export const HermesChatResponseSchema = z
+export const UpstreamChatResponseSchema = z
   .object({
     text: z.string().min(1).optional(),
     message: z.string().min(1).optional(),
   })
   .passthrough()
   .refine((response) => response.text || response.message, {
-    message: "Expected text or message in Hermes response",
+    message: "Expected text or message in upstream response",
   });
 
-export type HermesChatRequest = z.infer<typeof HermesChatRequestSchema>;
-export type HermesChatResponse = z.infer<typeof HermesChatResponseSchema>;
+export type UpstreamChatRequest = z.infer<typeof UpstreamChatRequestSchema>;
+export type UpstreamChatResponse = z.infer<typeof UpstreamChatResponseSchema>;

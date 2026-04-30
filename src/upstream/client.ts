@@ -1,20 +1,20 @@
-import { HermesChatResponseSchema, type HermesChatRequest } from "./schemas.js";
+import { UpstreamChatResponseSchema, type UpstreamChatRequest } from "./schemas.js";
 
-export type HermesClientOptions = {
+export type UpstreamClientOptions = {
   endpoint: string;
-  apiToken?: string;
+  bearerToken?: string;
   timeoutMs: number;
   fetchImpl?: typeof fetch;
 };
 
-export class HermesClient {
+export class UpstreamClient {
   private readonly fetchImpl: typeof fetch;
 
-  constructor(private readonly options: HermesClientOptions) {
+  constructor(private readonly options: UpstreamClientOptions) {
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
-  async sendMessage(request: HermesChatRequest): Promise<string> {
+  async sendMessage(request: UpstreamChatRequest): Promise<string> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
 
@@ -27,12 +27,12 @@ export class HermesClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Hermes request failed with ${response.status}`);
+        throw new Error(`Upstream request failed with ${response.status}`);
       }
 
       const payload: unknown = await response.json();
-      const hermesResponse = HermesChatResponseSchema.parse(payload);
-      return hermesResponse.text ?? hermesResponse.message ?? "";
+      const upstreamResponse = UpstreamChatResponseSchema.parse(payload);
+      return upstreamResponse.text ?? upstreamResponse.message ?? "";
     } finally {
       clearTimeout(timeout);
     }
@@ -43,8 +43,8 @@ export class HermesClient {
       "content-type": "application/json",
     };
 
-    if (this.options.apiToken) {
-      headers.authorization = `Bearer ${this.options.apiToken}`;
+    if (this.options.bearerToken) {
+      headers.authorization = `Bearer ${this.options.bearerToken}`;
     }
 
     return headers;

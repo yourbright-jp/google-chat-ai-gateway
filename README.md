@@ -1,6 +1,6 @@
 # Google Chat AI Gateway
 
-HTTP bridge for connecting a Google Chat app to an AI backend such as Hermes Agent.
+HTTP bridge for connecting a Google Chat app to an AI backend webhook.
 
 The repository is safe to keep public as long as production endpoints, tokens, Google Cloud service account keys, and real Chat payloads stay outside git.
 
@@ -10,7 +10,7 @@ The repository is safe to keep public as long as production endpoints, tokens, G
 Google Chat app
   -> Cloud Run /google-chat/events
   -> Zod validation for Google Chat payloads
-  -> Hermes-compatible webhook request
+  -> normalized upstream webhook request
   -> Google Chat text response
 ```
 
@@ -26,9 +26,9 @@ Required environment variables:
 
 | Name | Required | Description |
 | --- | --- | --- |
-| `HERMES_ENDPOINT` | yes | Hermes webhook/API endpoint that receives normalized Chat messages. |
-| `HERMES_API_TOKEN` | no | Bearer token sent to Hermes. Leave empty if Hermes does not require it. |
-| `HERMES_TIMEOUT_MS` | no | Timeout for Hermes calls. Defaults to `25000`. |
+| `UPSTREAM_WEBHOOK_URL` | yes | AI/backend webhook URL that receives normalized Chat messages. |
+| `UPSTREAM_BEARER_TOKEN` | no | Bearer token sent to the upstream webhook. Leave empty if it does not require it. |
+| `UPSTREAM_TIMEOUT_MS` | no | Timeout for upstream webhook calls. Defaults to `25000`. |
 | `PORT` | no | HTTP port. Cloud Run provides this automatically. Defaults to `8080`. |
 
 ## Endpoints
@@ -36,9 +36,9 @@ Required environment variables:
 - `GET /healthz` returns `{ "ok": true }`.
 - `POST /google-chat/events` receives Google Chat interaction events.
 
-## Hermes Request Shape
+## Upstream Request Shape
 
-`MESSAGE` and `APP_COMMAND` events are forwarded to Hermes as:
+`MESSAGE` and `APP_COMMAND` events are forwarded to the upstream webhook as:
 
 ```json
 {
@@ -58,7 +58,7 @@ Required environment variables:
 }
 ```
 
-Hermes should respond with either:
+The upstream webhook should respond with either:
 
 ```json
 { "text": "reply" }
@@ -78,8 +78,8 @@ Build and deploy:
 gcloud run deploy google-chat-ai-gateway \
   --source . \
   --region asia-northeast1 \
-  --set-env-vars HERMES_ENDPOINT=https://example.com/webhook \
-  --set-secrets HERMES_API_TOKEN=HERMES_API_TOKEN:latest
+  --set-env-vars UPSTREAM_WEBHOOK_URL=https://example.com/webhook \
+  --set-secrets UPSTREAM_BEARER_TOKEN=UPSTREAM_BEARER_TOKEN:latest
 ```
 
 For production, configure the service so it is not publicly invokable and authorize the Google Chat service account as an invoker. Keep all secrets in Secret Manager or Cloud Run environment configuration, not in this repository.

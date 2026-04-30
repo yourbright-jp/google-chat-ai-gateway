@@ -8,22 +8,22 @@ import {
   GoogleChatEventSchema,
   type GoogleChatEvent,
 } from "./google-chat/schemas.js";
-import { HermesClient } from "./hermes/client.js";
-import type { HermesChatRequest } from "./hermes/schemas.js";
+import { UpstreamClient } from "./upstream/client.js";
+import type { UpstreamChatRequest } from "./upstream/schemas.js";
 
 type AppDependencies = {
   config?: Config;
-  hermesClient?: Pick<HermesClient, "sendMessage">;
+  upstreamClient?: Pick<UpstreamClient, "sendMessage">;
 };
 
 export function createApp(dependencies: AppDependencies = {}) {
   const config = dependencies.config ?? loadConfig();
-  const hermesClient =
-    dependencies.hermesClient ??
-    new HermesClient({
-      endpoint: config.hermesEndpoint,
-      ...(config.hermesApiToken ? { apiToken: config.hermesApiToken } : {}),
-      timeoutMs: config.hermesTimeoutMs,
+  const upstreamClient =
+    dependencies.upstreamClient ??
+    new UpstreamClient({
+      endpoint: config.upstreamWebhookUrl,
+      ...(config.upstreamBearerToken ? { bearerToken: config.upstreamBearerToken } : {}),
+      timeoutMs: config.upstreamTimeoutMs,
     });
 
   const app = new Hono();
@@ -50,7 +50,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     switch (eventType) {
       case "MESSAGE":
       case "APP_COMMAND":
-        return c.json(textResponse(await forwardMessage(event, hermesClient)));
+        return c.json(textResponse(await forwardMessage(event, upstreamClient)));
       case "ADDED_TO_SPACE":
         return c.json(textResponse("Google Chat AI Gateway is ready."));
       case "REMOVED_FROM_SPACE":
@@ -71,7 +71,7 @@ export function createApp(dependencies: AppDependencies = {}) {
 
 async function forwardMessage(
   event: GoogleChatEvent,
-  hermesClient: Pick<HermesClient, "sendMessage">,
+  upstreamClient: Pick<UpstreamClient, "sendMessage">,
 ): Promise<string> {
   const text = event.message?.argumentText ?? event.message?.text;
 
@@ -79,7 +79,7 @@ async function forwardMessage(
     return "Message text is required.";
   }
 
-  const request: HermesChatRequest = {
+  const request: UpstreamChatRequest = {
     conversationId: buildConversationId(event),
     message: text.trim(),
     source: "google-chat",
@@ -95,5 +95,5 @@ async function forwardMessage(
     rawEvent: event,
   };
 
-  return hermesClient.sendMessage(request);
+  return upstreamClient.sendMessage(request);
 }

@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
-import type { HermesChatRequest } from "./hermes/schemas.js";
+import type { UpstreamChatRequest } from "./upstream/schemas.js";
 
 const config = {
-  hermesEndpoint: "https://hermes.example.com/webhook",
-  hermesTimeoutMs: 25_000,
+  upstreamWebhookUrl: "https://ai-backend.example.com/webhook",
+  upstreamTimeoutMs: 25_000,
   port: 8080,
 };
 
 describe("createApp", () => {
-  it("forwards MESSAGE events to Hermes and returns Google Chat text", async () => {
-    const sent: HermesChatRequest[] = [];
+  it("forwards MESSAGE events to the upstream webhook and returns Google Chat text", async () => {
+    const sent: UpstreamChatRequest[] = [];
     const app = createApp({
       config,
-      hermesClient: {
+      upstreamClient: {
         async sendMessage(request) {
           sent.push(request);
           return "pong";
