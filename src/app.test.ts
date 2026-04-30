@@ -4,6 +4,8 @@ import type { UpstreamChatRequest } from "./upstream/schemas.js";
 
 const config = {
   upstreamWebhookUrl: "https://ai-backend.example.com/webhook",
+  upstreamFormat: "webhook" as const,
+  upstreamModel: "hermes-agent-staff",
   upstreamTimeoutMs: 25_000,
   port: 8080,
 };

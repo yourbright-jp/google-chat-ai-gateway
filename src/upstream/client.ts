@@ -1,8 +1,16 @@
-import { UpstreamChatResponseSchema, type UpstreamChatRequest } from "./schemas.js";
+import {
+  OpenAiChatCompletionResponseSchema,
+  UpstreamChatResponseSchema,
+  type UpstreamChatRequest,
+} from "./schemas.js";
+
+export type UpstreamFormat = "webhook" | "openai-chat-completions";
 
 export type UpstreamClientOptions = {
   endpoint: string;
   bearerToken?: string;
+  format?: UpstreamFormat;
+  model?: string;
   timeoutMs: number;
   fetchImpl?: typeof fetch;
 };
@@ -22,7 +30,7 @@ export class UpstreamClient {
       const response = await this.fetchImpl(this.options.endpoint, {
         method: "POST",
         headers: this.buildHeaders(),
-        body: JSON.stringify(request),
+        body: JSON.stringify(this.buildBody(request)),
         signal: controller.signal,
       });
 
@@ -31,6 +39,11 @@ export class UpstreamClient {
       }
 
       const payload: unknown = await response.json();
+      if (this.options.format === "openai-chat-completions") {
+        const chatCompletion = OpenAiChatCompletionResponseSchema.parse(payload);
+        return chatCompletion.choices[0]?.message.content ?? "";
+      }
+
       const upstreamResponse = UpstreamChatResponseSchema.parse(payload);
       return upstreamResponse.text ?? upstreamResponse.message ?? "";
     } finally {
@@ -48,5 +61,46 @@ export class UpstreamClient {
     }
 
     return headers;
+  }
+
+  private buildBody(request: UpstreamChatRequest): unknown {
+    if (this.options.format !== "openai-chat-completions") {
+      return request;
+    }
+
+    return {
+      model: this.options.model ?? "hermes-agent-staff",
+      stream: false,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are staff Hermes receiving Google Chat messages. Reply concisely in the same language as the user unless asked otherwise.",
+        },
+        {
+          role: "user",
+          content: this.buildHermesUserMessage(request),
+        },
+      ],
+    };
+  }
+
+  private buildHermesUserMessage(request: UpstreamChatRequest): string {
+    const userLabel = [
+      request.user?.displayName,
+      request.user?.email ? `<${request.user.email}>` : undefined,
+      request.user?.id ? `(${request.user.id})` : undefined,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const spaceLabel = [request.space.displayName, `(${request.space.id})`].filter(Boolean).join(" ");
+
+    return [
+      `Conversation: ${request.conversationId}`,
+      `Space: ${spaceLabel}`,
+      `User: ${userLabel || "unknown"}`,
+      "",
+      request.message,
+    ].join("\n");
   }
 }

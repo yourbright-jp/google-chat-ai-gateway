@@ -23,6 +23,8 @@ export function createApp(dependencies: AppDependencies = {}) {
     new UpstreamClient({
       endpoint: config.upstreamWebhookUrl,
       ...(config.upstreamBearerToken ? { bearerToken: config.upstreamBearerToken } : {}),
+      format: config.upstreamFormat,
+      model: config.upstreamModel,
       timeoutMs: config.upstreamTimeoutMs,
     });
 

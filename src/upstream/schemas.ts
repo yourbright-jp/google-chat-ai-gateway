@@ -28,5 +28,18 @@ export const UpstreamChatResponseSchema = z
     message: "Expected text or message in upstream response",
   });
 
+export const OpenAiChatCompletionResponseSchema = z.object({
+  choices: z
+    .array(
+      z.object({
+        message: z.object({
+          content: z.string().min(1),
+        }),
+      }),
+    )
+    .min(1),
+});
+
 export type UpstreamChatRequest = z.infer<typeof UpstreamChatRequestSchema>;
 export type UpstreamChatResponse = z.infer<typeof UpstreamChatResponseSchema>;
+export type OpenAiChatCompletionResponse = z.infer<typeof OpenAiChatCompletionResponseSchema>;
