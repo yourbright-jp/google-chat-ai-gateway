@@ -2,10 +2,10 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { loadConfig, type Config } from "./config.js";
 import { buildConversationId } from "./google-chat/conversation-id.js";
-import { textResponse } from "./google-chat/response.js";
+import { textResponse, workspaceChatTextResponse } from "./google-chat/response.js";
 import {
   getGoogleChatEventType,
-  GoogleChatEventSchema,
+  normalizeGoogleChatEvent,
   type GoogleChatEvent,
 } from "./google-chat/schemas.js";
 import { UpstreamClient } from "./upstream/client.js";
@@ -34,7 +34,8 @@ export function createApp(dependencies: AppDependencies = {}) {
 
   app.post("/google-chat/events", async (c) => {
     const rawBody: unknown = await c.req.json().catch(() => undefined);
-    const parsed = GoogleChatEventSchema.safeParse(rawBody);
+    const parsed = normalizeGoogleChatEvent(rawBody);
+    const respondWithText = isWorkspaceAddOnChatEvent(rawBody) ? workspaceChatTextResponse : textResponse;
 
     if (!parsed.success) {
       return c.json(
@@ -52,23 +53,27 @@ export function createApp(dependencies: AppDependencies = {}) {
     switch (eventType) {
       case "MESSAGE":
       case "APP_COMMAND":
-        return c.json(textResponse(await forwardMessage(event, upstreamClient)));
+        return c.json(respondWithText(await forwardMessage(event, upstreamClient)));
       case "ADDED_TO_SPACE":
-        return c.json(textResponse("Google Chat AI Gateway is ready."));
+        return c.json(respondWithText("Google Chat AI Gateway is ready."));
       case "REMOVED_FROM_SPACE":
         return c.body(null, 204);
       case "CARD_CLICKED":
       case "APP_HOME":
       case "SUBMIT_FORM":
-        return c.json(textResponse("This interaction is not supported yet."));
+        return c.json(respondWithText("This interaction is not supported yet."));
       default:
-        return c.json(textResponse("Unsupported Google Chat event."));
+        return c.json(respondWithText("Unsupported Google Chat event."));
     }
   });
 
   app.notFound((c) => c.json({ error: "not_found" }, 404));
 
   return app;
+}
+
+function isWorkspaceAddOnChatEvent(rawBody: unknown): boolean {
+  return typeof rawBody === "object" && rawBody !== null && "chat" in rawBody;
 }
 
 async function forwardMessage(

@@ -56,6 +56,47 @@ describe("createApp", () => {
     expect(await response.json()).toEqual({ text: "Google Chat AI Gateway is ready." });
   });
 
+  it("forwards Google Workspace add-on Chat message payloads", async () => {
+    const sent: UpstreamChatRequest[] = [];
+    const app = createApp({
+      config,
+      upstreamClient: {
+        async sendMessage(request) {
+          sent.push(request);
+          return "pong";
+        },
+      },
+    });
+
+    const response = await app.request("/google-chat/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chat: {
+          user: { name: "users/123", displayName: "Guru" },
+          messagePayload: {
+            space: { name: "spaces/AAA", displayName: "Ops" },
+            message: { text: "ping", thread: { name: "spaces/AAA/threads/BBB" } },
+          },
+        },
+        commonEventObject: { hostApp: "CHAT" },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      hostAppDataAction: {
+        chatDataAction: {
+          createMessageAction: {
+            message: { text: "pong" },
+          },
+        },
+      },
+    });
+    expect(sent[0]?.conversationId).toBe("spaces/AAA|spaces/AAA/threads/BBB|users/123");
+    expect(sent[0]?.message).toBe("ping");
+  });
+
   it("rejects invalid events", async () => {
     const app = createApp({ config });
     const response = await app.request("/google-chat/events", {
