@@ -9,12 +9,15 @@ describe("loadConfig", () => {
         UPSTREAM_FORMAT: "openai-chat-completions",
         UPSTREAM_MODEL: "hermes-agent-staff",
         UPSTREAM_BEARER_TOKEN: "staff-token",
+        GOOGLE_CHAT_PUSH_TOKEN: "push-token",
       }),
     ).toMatchObject({
       upstreamWebhookUrl: "https://hermes.example.com/v1/chat/completions",
       upstreamFormat: "openai-chat-completions",
       upstreamModel: "hermes-agent-staff",
       upstreamBearerToken: "staff-token",
+      googleChatPushToken: "push-token",
+      googleChatApiBaseUrl: "https://chat.googleapis.com",
     });
   });
 });

@@ -7,6 +7,8 @@ const config = {
   upstreamFormat: "webhook" as const,
   upstreamModel: "hermes-agent-staff",
   upstreamTimeoutMs: 25_000,
+  googleChatPushToken: "push-secret",
+  googleChatApiBaseUrl: "https://chat.googleapis.com",
   port: 8080,
 };
 
@@ -106,5 +108,48 @@ describe("createApp", () => {
     });
 
     expect(response.status).toBe(400);
+  });
+
+  it("pushes a message to a specific Google Chat space", async () => {
+    const sent: unknown[] = [];
+    const app = createApp({
+      config,
+      googleChatClient: {
+        async sendTextMessage(request) {
+          sent.push(request);
+          return { name: "spaces/AAA/messages/BBB" };
+        },
+      },
+    });
+
+    const response = await app.request("/google-chat/push", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer push-secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        space: "spaces/AAA",
+        text: "hello from Hermes",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, name: "spaces/AAA/messages/BBB" });
+    expect(sent).toEqual([{ space: "spaces/AAA", text: "hello from Hermes" }]);
+  });
+
+  it("requires the push bearer token", async () => {
+    const app = createApp({ config });
+    const response = await app.request("/google-chat/push", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        space: "spaces/AAA",
+        text: "hello",
+      }),
+    });
+
+    expect(response.status).toBe(401);
   });
 });

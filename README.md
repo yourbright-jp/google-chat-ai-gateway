@@ -12,6 +12,11 @@ Google Chat app
   -> Zod validation for Google Chat payloads
   -> normalized upstream webhook request or OpenAI chat completions request
   -> Google Chat text response
+
+Hermes or another internal service
+  -> Cloud Run /google-chat/push
+  -> Google Chat API spaces.messages.create
+  -> target Google Chat space
 ```
 
 ## Local Development
@@ -31,12 +36,54 @@ Required environment variables:
 | `UPSTREAM_FORMAT` | no | Upstream request format. Use `webhook` for normalized JSON or `openai-chat-completions` for Hermes/OpenAI-compatible APIs. Defaults to `webhook`. |
 | `UPSTREAM_MODEL` | no | Model value sent when `UPSTREAM_FORMAT=openai-chat-completions`. Defaults to `hermes-agent-staff`. |
 | `UPSTREAM_TIMEOUT_MS` | no | Timeout for upstream webhook calls. Defaults to `25000`. |
+| `GOOGLE_CHAT_PUSH_TOKEN` | no | Internal bearer token required by `POST /google-chat/push`. Leave unset to disable push. |
+| `GOOGLE_CHAT_SERVICE_ACCOUNT_JSON` | no | Service account JSON used for Google Chat API push calls. If unset, the gateway uses the Cloud Run metadata service account. |
+| `GOOGLE_CHAT_API_BASE_URL` | no | Google Chat API base URL. Defaults to `https://chat.googleapis.com`. |
 | `PORT` | no | HTTP port. Cloud Run provides this automatically. Defaults to `8080`. |
 
 ## Endpoints
 
 - `GET /healthz` returns `{ "ok": true }`.
 - `POST /google-chat/events` receives Google Chat interaction events.
+- `POST /google-chat/push` sends a text message to a specific Google Chat space.
+
+## Push Messages to Google Chat
+
+`POST /google-chat/push` is for trusted internal callers such as Hermes. It requires:
+
+- `GOOGLE_CHAT_PUSH_TOKEN` configured on this gateway.
+- A bearer token matching `GOOGLE_CHAT_PUSH_TOKEN`.
+- Google Chat API access with the `https://www.googleapis.com/auth/chat.bot` scope.
+- The Chat app added to the target space.
+
+Request:
+
+```http
+POST /google-chat/push
+Authorization: Bearer <GOOGLE_CHAT_PUSH_TOKEN>
+Content-Type: application/json
+```
+
+```json
+{
+  "space": "spaces/AAA",
+  "text": "hello from Hermes",
+  "requestId": "optional-dedupe-id",
+  "threadName": "spaces/AAA/threads/BBB"
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "name": "spaces/AAA/messages/BBB",
+  "threadName": "spaces/AAA/threads/BBB"
+}
+```
+
+For Cloud Run, prefer using the service's attached service account with Chat API permissions. For local development, set `GOOGLE_CHAT_SERVICE_ACCOUNT_JSON` to a service account JSON string.
 
 ## Upstream Request Shape
 

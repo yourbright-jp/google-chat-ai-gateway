@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { loadConfig, type Config } from "./config.js";
 import { buildConversationId } from "./google-chat/conversation-id.js";
+import { GoogleChatApiClient, GoogleChatPushRequestSchema } from "./google-chat/push.js";
 import { textResponse, workspaceChatTextResponse } from "./google-chat/response.js";
 import {
   getGoogleChatEventType,
@@ -14,6 +15,7 @@ import type { UpstreamChatRequest } from "./upstream/schemas.js";
 type AppDependencies = {
   config?: Config;
   upstreamClient?: Pick<UpstreamClient, "sendMessage">;
+  googleChatClient?: Pick<GoogleChatApiClient, "sendTextMessage">;
 };
 
 export function createApp(dependencies: AppDependencies = {}) {
@@ -27,10 +29,43 @@ export function createApp(dependencies: AppDependencies = {}) {
       model: config.upstreamModel,
       timeoutMs: config.upstreamTimeoutMs,
     });
+  const googleChatClient =
+    dependencies.googleChatClient ??
+    new GoogleChatApiClient({
+      apiBaseUrl: config.googleChatApiBaseUrl,
+      ...(config.googleChatServiceAccountJson ? { serviceAccountJson: config.googleChatServiceAccountJson } : {}),
+    });
 
   const app = new Hono();
 
   app.get("/healthz", (c) => c.json({ ok: true }));
+
+  app.post("/google-chat/push", async (c) => {
+    if (!config.googleChatPushToken) {
+      return c.json({ error: "google_chat_push_not_configured" }, 503);
+    }
+
+    const authorization = c.req.header("authorization");
+    if (authorization !== `Bearer ${config.googleChatPushToken}`) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+
+    const rawBody: unknown = await c.req.json().catch(() => undefined);
+    const parsed = GoogleChatPushRequestSchema.safeParse(rawBody);
+
+    if (!parsed.success) {
+      return c.json(
+        {
+          error: "invalid_google_chat_push_request",
+          issues: z.treeifyError(parsed.error),
+        },
+        400,
+      );
+    }
+
+    const message = await googleChatClient.sendTextMessage(parsed.data);
+    return c.json({ ok: true, ...message });
+  });
 
   app.post("/google-chat/events", async (c) => {
     const rawBody: unknown = await c.req.json().catch(() => undefined);
