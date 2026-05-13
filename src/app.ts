@@ -15,7 +15,7 @@ import type { UpstreamChatRequest } from "./upstream/schemas.js";
 type AppDependencies = {
   config?: Config;
   upstreamClient?: Pick<UpstreamClient, "sendMessage">;
-  googleChatClient?: Pick<GoogleChatApiClient, "sendTextMessage" | "isThreadEngaged">;
+  googleChatClient?: Pick<GoogleChatApiClient, "sendTextMessage">;
 };
 
 export function createApp(dependencies: AppDependencies = {}) {
@@ -87,15 +87,8 @@ export function createApp(dependencies: AppDependencies = {}) {
 
     switch (eventType) {
       case "MESSAGE":
-      case "APP_COMMAND": {
-        if (!(await shouldRespond(event, googleChatClient))) {
-          // Google Chat treats an empty JSON body as "no message".
-          // We use it for channel chitchat that is not @-directed at
-          // the bot and not in a thread the bot has already joined.
-          return c.json({});
-        }
+      case "APP_COMMAND":
         return c.json(respondWithText(await forwardMessage(event, upstreamClient)));
-      }
       case "ADDED_TO_SPACE":
         return c.json(respondWithText("Google Chat AI Gateway is ready."));
       case "REMOVED_FROM_SPACE":
@@ -116,59 +109,6 @@ export function createApp(dependencies: AppDependencies = {}) {
 
 function isWorkspaceAddOnChatEvent(rawBody: unknown): boolean {
   return typeof rawBody === "object" && rawBody !== null && "chat" in rawBody;
-}
-
-/**
- * Decides whether the gateway should forward this event to the upstream
- * AI backend.
- *
- *   - DM:                         always respond.
- *   - Space + `@`-mention:        respond.
- *   - Space + no mention, but the bot already has a message in the
- *     thread (i.e. the thread was started by an `@`-mention earlier):
- *                                 respond.
- *   - Space + no mention + not in a bot-engaged thread:
- *                                 ignore.
- *
- * Pre-requisite: the Chat app must be configured to receive every
- * message in spaces where it is a member (not just `@`-mentions),
- * otherwise the second/third branches never get the chance to fire.
- *
- * Engagement is checked with a single `spaces.messages.list` call
- * filtered to the target thread. If that call fails (auth misconfig,
- * API outage, …) the gateway defaults to "ignore" rather than
- * spamming the channel with unsolicited replies.
- */
-async function shouldRespond(
-  event: GoogleChatEvent,
-  chatClient: Pick<GoogleChatApiClient, "isThreadEngaged">,
-): Promise<boolean> {
-  // Defensive: a bot's own message should never round-trip to itself.
-  if (event.user?.type === "BOT") {
-    return false;
-  }
-  if (event.space.type === "DM") {
-    return true;
-  }
-  // Google Chat populates `message.argumentText` only when the bot is
-  // `@`-mentioned (or a slash command is directed at it); plain channel
-  // chitchat leaves it undefined.
-  if (typeof event.message?.argumentText === "string") {
-    return true;
-  }
-  const threadName = event.message?.thread?.name;
-  if (!threadName) {
-    return false;
-  }
-  try {
-    return await chatClient.isThreadEngaged(event.space.name, threadName);
-  } catch (err) {
-    console.error("[gateway] isThreadEngaged failed; ignoring message", {
-      threadName,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return false;
-  }
 }
 
 async function forwardMessage(

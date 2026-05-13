@@ -24,14 +24,6 @@ export type GoogleChatApiClientOptions = {
   fetchImpl?: typeof fetch;
 };
 
-export type ListedChatMessage = {
-  name?: string;
-  sender?: {
-    name?: string;
-    type?: string;
-  };
-};
-
 type ServiceAccountCredentials = {
   client_email: string;
   private_key: string;
@@ -86,52 +78,6 @@ export class GoogleChatApiClient {
       ...(payload.name ? { name: payload.name } : {}),
       ...(payload.thread?.name ? { threadName: payload.thread.name } : {}),
     };
-  }
-
-  /**
-   * Returns true when this Chat app already has a message in the given
-   * thread. Used by the gateway to keep an `@`-started thread engaged
-   * without requiring a re-mention on every follow-up message.
-   *
-   * Implemented as a single `spaces.messages.list` call filtered to the
-   * target thread; matches any `sender.type === "BOT"` because typical
-   * deployments only have one Chat app per space. If you run multiple
-   * bots in the same space, narrow this to a specific sender name.
-   */
-  async isThreadEngaged(space: string, threadName: string): Promise<boolean> {
-    const messages = await this.listMessages({
-      space,
-      filter: `thread.name = "${threadName}"`,
-      pageSize: 25,
-    });
-    return messages.some((m) => m.sender?.type === "BOT");
-  }
-
-  async listMessages(params: {
-    space: string;
-    filter?: string;
-    pageSize?: number;
-  }): Promise<ListedChatMessage[]> {
-    const accessToken = await this.getAccessToken();
-    const url = new URL(`${this.options.apiBaseUrl.replace(/\/$/, "")}/v1/${params.space}/messages`);
-    if (params.filter) {
-      url.searchParams.set("filter", params.filter);
-    }
-    if (params.pageSize) {
-      url.searchParams.set("pageSize", String(params.pageSize));
-    }
-
-    const response = await this.fetchImpl(url, {
-      headers: { authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!response.ok) {
-      const message = await response.text().catch(() => "");
-      throw new Error(`Google Chat messages.list failed with ${response.status}${message ? `: ${message}` : ""}`);
-    }
-
-    const payload = (await response.json().catch(() => ({}))) as { messages?: ListedChatMessage[] };
-    return payload.messages ?? [];
   }
 
   private async getAccessToken(): Promise<string> {
