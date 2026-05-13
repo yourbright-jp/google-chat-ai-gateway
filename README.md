@@ -47,26 +47,6 @@ Required environment variables:
 - `POST /google-chat/events` receives Google Chat interaction events.
 - `POST /google-chat/push` sends a text message to a specific Google Chat space.
 
-## When the Gateway Responds
-
-The gateway decides whether to forward an inbound message to the upstream AI backend based on where the message arrived and whether the bot has been involved in its thread:
-
-| Where | `@`-mention | Bot already replied in this thread | Action |
-| --- | --- | --- | --- |
-| DM | — | — | forward |
-| Space | yes | — | forward |
-| Space | no | yes | forward (thread continuity) |
-| Space | no | no | ignore (respond `{}`) |
-| Space | no | no thread | ignore |
-
-This lets a user start a thread by `@`-mentioning the bot once and then keep replying in that thread without re-mentioning on every message. Channel chitchat outside an engaged thread is ignored.
-
-The "already replied in this thread" check is a single `spaces.messages.list` call filtered to the target thread, looking for any message whose `sender.type` is `BOT`. If the call fails (auth misconfig, API outage, …) the gateway defaults to ignore rather than spamming the channel.
-
-**Prerequisite**: the Google Chat app must be configured to receive every message in spaces where it is a member, not just `@`-mentions. In the Chat API admin panel set the app's space messaging mode so that *all* messages in member spaces are delivered to this endpoint. Without that, the gateway never sees un-mentioned thread replies and the second/third branches above never fire.
-
-The Chat app's service account also needs the `https://www.googleapis.com/auth/chat.bot` scope for the engagement check (already required for `/google-chat/push`).
-
 ## Push Messages to Google Chat
 
 `POST /google-chat/push` is for trusted internal callers such as Hermes. It requires:
