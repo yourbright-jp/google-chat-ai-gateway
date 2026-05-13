@@ -12,9 +12,30 @@ const config = {
   port: 8080,
 };
 
+type StubChatClient = {
+  sendTextMessage: (...args: never[]) => Promise<never>;
+  isThreadEngaged: (space: string, threadName: string) => Promise<boolean>;
+  engagedCalls: Array<[string, string]>;
+};
+
+function stubChatClient(engaged: boolean): StubChatClient {
+  const stub: StubChatClient = {
+    sendTextMessage: async () => {
+      throw new Error("sendTextMessage should not be called in event handling");
+    },
+    isThreadEngaged: async (space, threadName) => {
+      stub.engagedCalls.push([space, threadName]);
+      return engaged;
+    },
+    engagedCalls: [],
+  };
+  return stub;
+}
+
 describe("createApp", () => {
-  it("forwards MESSAGE events to the upstream webhook and returns Google Chat text", async () => {
+  it("forwards mentioned MESSAGE events in a space without an engagement check", async () => {
     const sent: UpstreamChatRequest[] = [];
+    const chatClient = stubChatClient(false);
     const app = createApp({
       config,
       upstreamClient: {
@@ -23,6 +44,7 @@ describe("createApp", () => {
           return "pong";
         },
       },
+      googleChatClient: chatClient,
     });
 
     const response = await app.request("/google-chat/events", {
@@ -30,8 +52,12 @@ describe("createApp", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         eventType: "MESSAGE",
-        space: { name: "spaces/AAA", displayName: "Ops" },
-        message: { text: "ping", thread: { name: "spaces/AAA/threads/BBB" } },
+        space: { name: "spaces/AAA", type: "ROOM", displayName: "Ops" },
+        message: {
+          text: "@Hermes ping",
+          argumentText: "ping",
+          thread: { name: "spaces/AAA/threads/BBB" },
+        },
         user: { name: "users/123", displayName: "Guru" },
       }),
     });
@@ -41,6 +67,176 @@ describe("createApp", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]?.conversationId).toBe("spaces/AAA|spaces/AAA/threads/BBB|users/123");
     expect(sent[0]?.message).toBe("ping");
+    expect(chatClient.engagedCalls).toEqual([]);
+  });
+
+  it("forwards an un-mentioned thread reply when the bot has already engaged in the thread", async () => {
+    const sent: UpstreamChatRequest[] = [];
+    const chatClient = stubChatClient(true);
+    const app = createApp({
+      config,
+      upstreamClient: {
+        async sendMessage(request) {
+          sent.push(request);
+          return "pong";
+        },
+      },
+      googleChatClient: chatClient,
+    });
+
+    const response = await app.request("/google-chat/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventType: "MESSAGE",
+        space: { name: "spaces/AAA", type: "ROOM" },
+        message: {
+          text: "follow up",
+          thread: { name: "spaces/AAA/threads/BBB" },
+        },
+        user: { name: "users/123", displayName: "Guru" },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ text: "pong" });
+    expect(sent).toHaveLength(1);
+    expect(chatClient.engagedCalls).toEqual([["spaces/AAA", "spaces/AAA/threads/BBB"]]);
+  });
+
+  it("ignores an un-mentioned thread reply when the bot has not engaged in the thread", async () => {
+    const sent: UpstreamChatRequest[] = [];
+    const chatClient = stubChatClient(false);
+    const app = createApp({
+      config,
+      upstreamClient: {
+        async sendMessage(request) {
+          sent.push(request);
+          return "pong";
+        },
+      },
+      googleChatClient: chatClient,
+    });
+
+    const response = await app.request("/google-chat/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventType: "MESSAGE",
+        space: { name: "spaces/AAA", type: "ROOM" },
+        message: {
+          text: "drive-by chat",
+          thread: { name: "spaces/AAA/threads/QQQ" },
+        },
+        user: { name: "users/123", displayName: "Guru" },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({});
+    expect(sent).toEqual([]);
+    expect(chatClient.engagedCalls).toEqual([["spaces/AAA", "spaces/AAA/threads/QQQ"]]);
+  });
+
+  it("forwards every message in a DM regardless of mention", async () => {
+    const sent: UpstreamChatRequest[] = [];
+    const chatClient = stubChatClient(false);
+    const app = createApp({
+      config,
+      upstreamClient: {
+        async sendMessage(request) {
+          sent.push(request);
+          return "pong";
+        },
+      },
+      googleChatClient: chatClient,
+    });
+
+    const response = await app.request("/google-chat/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventType: "MESSAGE",
+        space: { name: "spaces/DM1", type: "DM" },
+        message: { text: "hi" },
+        user: { name: "users/123" },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ text: "pong" });
+    expect(sent).toHaveLength(1);
+    expect(chatClient.engagedCalls).toEqual([]);
+  });
+
+  it("ignores top-level space messages with no mention and no thread", async () => {
+    const sent: UpstreamChatRequest[] = [];
+    const chatClient = stubChatClient(true);
+    const app = createApp({
+      config,
+      upstreamClient: {
+        async sendMessage(request) {
+          sent.push(request);
+          return "pong";
+        },
+      },
+      googleChatClient: chatClient,
+    });
+
+    const response = await app.request("/google-chat/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventType: "MESSAGE",
+        space: { name: "spaces/AAA", type: "ROOM" },
+        message: { text: "ambient" },
+        user: { name: "users/123" },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({});
+    expect(sent).toEqual([]);
+    expect(chatClient.engagedCalls).toEqual([]);
+  });
+
+  it("falls back to ignore when the engagement check throws", async () => {
+    const sent: UpstreamChatRequest[] = [];
+    const app = createApp({
+      config,
+      upstreamClient: {
+        async sendMessage(request) {
+          sent.push(request);
+          return "pong";
+        },
+      },
+      googleChatClient: {
+        async sendTextMessage() {
+          throw new Error("not used");
+        },
+        async isThreadEngaged() {
+          throw new Error("Chat API down");
+        },
+      },
+    });
+
+    const response = await app.request("/google-chat/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventType: "MESSAGE",
+        space: { name: "spaces/AAA", type: "ROOM" },
+        message: {
+          text: "follow up",
+          thread: { name: "spaces/AAA/threads/BBB" },
+        },
+        user: { name: "users/123" },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({});
+    expect(sent).toEqual([]);
   });
 
   it("returns a welcome message when added to a space", async () => {
@@ -58,7 +254,7 @@ describe("createApp", () => {
     expect(await response.json()).toEqual({ text: "Google Chat AI Gateway is ready." });
   });
 
-  it("forwards Google Workspace add-on Chat message payloads", async () => {
+  it("forwards Google Workspace add-on Chat message payloads when mentioned", async () => {
     const sent: UpstreamChatRequest[] = [];
     const app = createApp({
       config,
@@ -68,6 +264,7 @@ describe("createApp", () => {
           return "pong";
         },
       },
+      googleChatClient: stubChatClient(false),
     });
 
     const response = await app.request("/google-chat/events", {
@@ -77,8 +274,12 @@ describe("createApp", () => {
         chat: {
           user: { name: "users/123", displayName: "Guru" },
           messagePayload: {
-            space: { name: "spaces/AAA", displayName: "Ops" },
-            message: { text: "ping", thread: { name: "spaces/AAA/threads/BBB" } },
+            space: { name: "spaces/AAA", type: "ROOM", displayName: "Ops" },
+            message: {
+              text: "@Hermes ping",
+              argumentText: "ping",
+              thread: { name: "spaces/AAA/threads/BBB" },
+            },
           },
         },
         commonEventObject: { hostApp: "CHAT" },
@@ -118,6 +319,9 @@ describe("createApp", () => {
         async sendTextMessage(request) {
           sent.push(request);
           return { name: "spaces/AAA/messages/BBB" };
+        },
+        async isThreadEngaged() {
+          throw new Error("isThreadEngaged should not be called from /google-chat/push");
         },
       },
     });
