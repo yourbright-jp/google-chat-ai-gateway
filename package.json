@@ -12,14 +12,14 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.0.10",
-    "hono": "^4.13.0",
+    "hono": "^4.13.7",
     "zod": "^4.1.13"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
     "tsx": "^4.22.4",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.14"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=22"
